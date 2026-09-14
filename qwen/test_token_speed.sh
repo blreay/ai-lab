@@ -1,0 +1,1 @@
+while ! docker logs qwen-vllm  | grep "HTTP server started"; do echo wait_again; sleep 4; done; python test_token_speed.py   --base-url http://localhost:8000/v1   --api-key dummy   --model qwen-local   --runs 5   --max-tokens 5000

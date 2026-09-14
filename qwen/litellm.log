@@ -1,0 +1,275 @@
+INFO:     Started server process [3694599]
+INFO:     Waiting for application startup.
+
+   ██╗     ██╗████████╗███████╗██╗     ██╗     ███╗   ███╗
+   ██║     ██║╚══██╔══╝██╔════╝██║     ██║     ████╗ ████║
+   ██║     ██║   ██║   █████╗  ██║     ██║     ██╔████╔██║
+   ██║     ██║   ██║   ██╔══╝  ██║     ██║     ██║╚██╔╝██║
+   ███████╗██║   ██║   ███████╗███████╗███████╗██║ ╚═╝ ██║
+   ╚══════╝╚═╝   ╚═╝   ╚══════╝╚══════╝╚══════╝╚═╝     ╚═╝
+
+[92m18:00:05 - LiteLLM:WARNING[0m: utils.py:2782 - register_model: model=b391393658227b56f57bb8a7f6857982985548a4eafa96df4131b8350054406f not in built-in cost map and no prefix/region variant matched; cache cost fields will default to 0. To track cache cost, add cache_creation_input_token_cost and cache_read_input_token_cost to model_info
+[92m18:00:05 - LiteLLM:WARNING[0m: utils.py:2782 - register_model: model=openai/qwen-local not in built-in cost map and no prefix/region variant matched; cache cost fields will default to 0. To track cache cost, add cache_creation_input_token_cost and cache_read_input_token_cost to model_info
+[92m18:00:05 - LiteLLM:WARNING[0m: utils.py:2782 - register_model: model=09b837e24e7acd8ed810c6689a2fea2df2190b06f90ca941d8ed5ca0be484636 not in built-in cost map and no prefix/region variant matched; cache cost fields will default to 0. To track cache cost, add cache_creation_input_token_cost and cache_read_input_token_cost to model_info
+[92m18:00:05 - LiteLLM:WARNING[0m: utils.py:2782 - register_model: model=13416df9702609bbeb6cb3a586c67b4cd12c3f9af4289447e89b0277cf972451 not in built-in cost map and no prefix/region variant matched; cache cost fields will default to 0. To track cache cost, add cache_creation_input_token_cost and cache_read_input_token_cost to model_info
+[92m18:00:05 - LiteLLM:WARNING[0m: utils.py:2782 - register_model: model=aeb7f673f40abe50a6bdabb4abdd46841d2cc80de5af94cd47ec2ebc250c6c0c not in built-in cost map and no prefix/region variant matched; cache cost fields will default to 0. To track cache cost, add cache_creation_input_token_cost and cache_read_input_token_cost to model_info
+[92m18:00:05 - LiteLLM:WARNING[0m: utils.py:2782 - register_model: model=762d58a088b25bf2d1d8ef8fec5287620c190deabd360baf6aef5d1d11cf7ca5 not in built-in cost map and no prefix/region variant matched; cache cost fields will default to 0. To track cache cost, add cache_creation_input_token_cost and cache_read_input_token_cost to model_info
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:4000 (Press CTRL+C to quit)
+
+[1;37m#------------------------------------------------------------#[0m
+[1;37m#                                                            #[0m
+[1;37m#           'I get frustrated when the product...'            #[0m
+[1;37m#        https://github.com/BerriAI/litellm/issues/new        #[0m
+[1;37m#                                                            #[0m
+[1;37m#------------------------------------------------------------#[0m
+
+ Thank you for using LiteLLM! - Krrish & Ishaan
+
+
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+
+
+[94m Initialized Success Callbacks - ['prometheus'] [0m
+[32mLiteLLM: Proxy initialized with Config, Set models:[0m
+[32m    qwen-local[0m
+[32m    qwen-low[0m
+[32m    qwen-medium[0m
+[32m    qwen-xhigh[0m
+[32m    qwen-nothink[0m
+INFO:     172.18.0.2:49094 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:49094 - "GET /metrics/ HTTP/1.1" 200 OK
+🎚 09-14 18:00:18 model=qwen-local thinking->medium (来自 reasoning.effort=high)
+INFO:     127.0.0.1:45358 - "POST /v1/responses HTTP/1.1" 200 OK
+INFO:     172.18.0.2:46316 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:46316 - "GET /metrics/ HTTP/1.1" 200 OK
+⚡ 09-14 18:00:27 codex-tui@127.0.0.1            qwen-local lvl=medium<-reasoning.effort=high strm | in=18011 out=66 think≈125tok/400c* | 8.2s
+INFO:     172.18.0.2:58948 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:58948 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:37628 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:37628 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:35476 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:35476 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:33426 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:33426 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:35242 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:35242 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:56256 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:56256 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:40994 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:40994 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:44292 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:44292 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:35034 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:35034 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:34268 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:34268 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:51038 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:51038 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:45776 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:45776 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:45722 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:45722 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:36666 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:36666 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:34628 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:34628 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:45328 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:45328 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:47604 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:47604 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:57964 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:57964 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:34740 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:34740 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:60060 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:60060 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:34710 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:34710 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:54662 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:54662 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:35606 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:35606 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:34404 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:34404 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:50854 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:50854 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:38686 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:38686 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:44288 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:44288 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:41852 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:41852 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:57932 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:57932 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:35312 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:35312 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:37618 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:37618 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:33912 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:33912 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:52998 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:52998 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:50218 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:50218 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:57500 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:57500 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:44590 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:44590 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:42206 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:42206 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:39156 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:39156 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:49252 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:49252 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:37352 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:37352 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:39138 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:39138 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:60040 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:60040 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:53080 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:53080 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:38116 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:38116 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:50436 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:50436 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:47706 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:47706 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:40980 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:40980 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:35874 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:35874 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:48992 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:48992 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:53778 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:53778 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:56204 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:56204 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:59422 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:59422 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:59286 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:59286 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:53848 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:53848 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:33930 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:33930 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:39244 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:39244 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:58508 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:58508 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:36412 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:36412 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:32842 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:32842 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:47092 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:47092 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:43398 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:43398 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:32888 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:32888 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:56404 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:56404 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:39666 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:39666 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:34932 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:34932 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:33740 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:33740 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:46320 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:46320 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:56310 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:56310 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:44914 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:44914 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:50772 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:50772 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:38470 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:38470 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:51902 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:51902 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:58098 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:58098 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:48232 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:48232 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:45912 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:45912 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:50840 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:50840 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:60338 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:60338 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:54742 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:54742 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:45096 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:45096 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:51006 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:51006 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:34294 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:34294 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:56370 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:56370 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:33474 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:33474 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:35606 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:35606 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:38886 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:38886 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:46990 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:46990 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:54500 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:54500 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:40664 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:40664 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:48220 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:48220 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:46524 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:46524 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:48508 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:48508 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:41474 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:41474 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:54682 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:54682 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:38952 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:38952 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:49108 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:49108 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:53398 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:53398 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:46908 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:46908 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:42700 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:42700 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:50678 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:50678 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:48776 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:48776 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:44052 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:44052 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:37710 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:37710 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:46152 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:46152 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:51886 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:51886 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:37102 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:37102 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:41480 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:41480 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:58666 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:58666 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:42478 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:42478 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:43050 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:43050 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:43778 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:43778 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:46162 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:46162 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:40456 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:40456 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:43818 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:43818 - "GET /metrics/ HTTP/1.1" 200 OK
+INFO:     172.18.0.2:57356 - "GET /metrics HTTP/1.1" 307 Temporary Redirect
+INFO:     172.18.0.2:57356 - "GET /metrics/ HTTP/1.1" 200 OK

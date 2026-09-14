@@ -1,0 +1,33 @@
+#!/bin/bash
+#
+#
+docker rm -f qwen-vllm 2>/dev/null || true
+
+  docker run -d \
+  --name qwen-vllm \
+  --restart unless-stopped \
+  --gpus all \
+  --ipc=host \
+  --shm-size 16g \
+  -p 8000:8000 \
+  -v /data/models:/models \
+  vllm/vllm-openai:latest \
+  --model /models/Qwen3.8-27B-AWQ-INT4 \
+  --served-model-name qwen-local \
+  --dtype auto \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --max-model-len 262144 \
+  --gpu-memory-utilization 0.9268 \
+  --max-num-seqs 6 \
+  --enable-prefix-caching \
+  --trust-remote-code \
+  --enable-auto-tool-choice \
+  --tool-call-parser qwen3_coder \
+  --speculative-config '{"method": "mtp", "num_speculative_tokens": 1}'
+  #--api-key sk-open-webui-aaa,sk-litellm-bbb \
+  #--tool-call-parser hermes
+  #--max-model-len 65536 \
+  #--max-model-len 131072 \
+
+#  --quantization awq \

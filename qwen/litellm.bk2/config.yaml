@@ -1,0 +1,35 @@
+general_settings:
+  master_key: sk-vllm-aaa-bbb
+
+model_list:
+  - model_name: qwen-local
+    litellm_params:
+      model: openai/qwen-local
+      api_base: http://127.0.0.1:8000/v1
+      api_key: sk-open-webui-aaa,sk-litellm-bbb
+      drop_params: false
+      additional_drop_params:
+        - reasoning
+        - parallel_tool_calls
+        - service_tier
+        - prompt_cache_key
+        - safety_identifier
+      extra_body:
+        chat_template_kwargs:
+          reasoning_effort: medium
+
+litellm_settings:
+  success_callback:
+    - prometheus
+  request_timeout: 180
+  num_retries: 3
+  drop_params: false
+  additional_drop_params:
+    - reasoning
+    - parallel_tool_calls
+    - service_tier
+    - prompt_cache_key
+    - safety_identifier
+  extra_body:
+    chat_template_kwargs:
+      reasoning_effort: medium

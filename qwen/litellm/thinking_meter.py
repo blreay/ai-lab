@@ -1,0 +1,695 @@
+# -*- coding: utf-8 -*-
+"""
+thinking_meter.py — litellm 思考电表 (litellm 1.97.x)
+
+功能:
+  1) 每个 LLM 请求追加一行 JSON 到 /data/ai/litellm/thinking_usage.jsonl
+     字段: 时间戳/来源(UA)/IP/key别名/模型/流式/思考档位/prompt_tokens/
+           cached_tokens(prefix缓存命中)/completion_tokens/思考字符数/
+           思考token估算/时延/call_id/错误
+  2) 控制台(litellm.log)打印单行实时摘要
+
+启用(config.yaml, 与本文件同目录):
+  litellm_settings:
+    callbacks: thinking_meter.thinking_meter
+
+环境变量:
+  THINKING_METER_PATH  覆盖 JSONL 路径
+"""
+import json
+import os
+import sys
+import time
+from datetime import datetime
+
+try:
+    from litellm.integrations.custom_logger import CustomLogger
+except Exception:  # pragma: no cover
+    CustomLogger = object
+
+LOG_PATH = os.environ.get("THINKING_METER_PATH", "/data/ai/litellm/thinking_usage.jsonl")
+CFG_PATH = os.environ.get("THINKING_METER_CONFIG", "/data/ai/litellm/config.yaml")
+
+
+def _load_cfg_level():
+    """从 config.yaml 读模型配置的默认思考档位(请求侧看不到时兜底)。"""
+    try:
+        import yaml
+        with open(CFG_PATH, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        ls = (cfg.get("litellm_settings") or {}).get("extra_body") or {}
+        lv = (ls.get("chat_template_kwargs") or {}).get("reasoning_effort")
+        if not lv:
+            for m in cfg.get("model_list") or []:
+                eb = ((m.get("litellm_params") or {}).get("extra_body") or {})
+                lv = (eb.get("chat_template_kwargs") or {}).get("reasoning_effort")
+                if lv:
+                    break
+        if lv:
+            return str(lv)
+    except Exception:
+        pass
+    return None
+
+
+_CFG_LEVEL = _load_cfg_level()
+
+
+# ---------- 思考档位路由 (pre-call hook) ----------
+
+ALIASES = {
+    "qwen-low": "low",
+    "qwen-medium": "medium",
+    "qwen-xhigh": "xhigh",
+    "qwen-nothink": "off",
+    "qwen-off": "off",
+}
+
+_LEVEL_MAP = {
+    "minimal": "low", "none": "off", "off": "off", "disable": "off",
+    "disabled": "off", "low": "low", "medium": "medium", "auto": "medium",
+    "high": "medium", "xhigh": "medium", "max": "medium",
+}
+
+
+def _fp(model, msgs):
+    """请求内容指纹: model + 最后一条消息文本前200字符。"""
+    try:
+        last = ""
+        if isinstance(msgs, str):
+            last = msgs[:200]
+        elif isinstance(msgs, list) and msgs:
+            c = msgs[-1].get("content") if isinstance(msgs[-1], dict) else None
+            if isinstance(c, list):
+                c = "".join((b.get("text") or b.get("thinking") or "") if isinstance(b, dict) else str(b) for b in c)
+            last = str(c or "")[:200]
+        if not last:
+            return None
+        return hashlib.md5((str(model) + "|" + last).encode("utf-8", "ignore")).hexdigest()[:16]
+    except Exception:
+        return None
+
+
+def _map_level(v):
+    if v is None:
+        return None
+    return _LEVEL_MAP.get(str(v).strip().lower())
+
+
+def _budget_level(b):
+    try:
+        b = int(b)
+    except Exception:
+        return "medium"
+    if b <= 1024:
+        return "low"
+    if b <= 8192:
+        return "medium"
+    return "xhigh"
+
+
+def _detect_level(d):
+    """在请求字典里找思考档位信号, 返回 (level, src) 或 (None, None)。"""
+    if not isinstance(d, dict):
+        return None, None
+    # a) 显式 chat_template_kwargs
+    eb0 = d.get("extra_body") if isinstance(d.get("extra_body"), dict) else {}
+    for ctk in (d.get("chat_template_kwargs"), eb0.get("chat_template_kwargs")):
+        if isinstance(ctk, dict):
+            if ctk.get("enable_thinking") is False:
+                return "off", "chat_template_kwargs"
+            if ctk.get("reasoning_effort"):
+                return (_map_level(ctk.get("reasoning_effort")),
+                        "chat_template_kwargs=" + str(ctk.get("reasoning_effort")))
+    # b) output_config.effort (Anthropic 新式 effort 参数, Claude Code /effort)
+    oc = d.get("output_config")
+    if isinstance(oc, dict) and oc.get("effort"):
+        return _map_level(oc.get("effort")), "output_config.effort=" + str(oc.get("effort"))
+    # c) reasoning.effort (Codex / Responses API)
+    r = d.get("reasoning")
+    if isinstance(r, dict) and r.get("effort"):
+        return _map_level(r.get("effort")), "reasoning.effort=" + str(r.get("effort"))
+    # d) 顶层 reasoning_effort (Open WebUI / OpenAI 风格)
+    if d.get("reasoning_effort"):
+        return _map_level(d.get("reasoning_effort")), "reasoning_effort=" + str(d.get("reasoning_effort"))
+    # e) thinking (Anthropic 经典思考参数)
+    th = d.get("thinking")
+    if isinstance(th, dict):
+        if th.get("type") == "disabled":
+            return "off", "thinking.disabled"
+        if th.get("type") == "enabled":
+            return _budget_level(th.get("budget_tokens")), "thinking.budget=" + str(th.get("budget_tokens"))
+    return None, None
+
+
+def _apply_level(data):
+    """识别客户端思考档位信号 -> 统一注入 extra_body.chat_template_kwargs。"""
+    if not isinstance(data, dict):
+        return None
+    model = str(data.get("model") or "")
+    if model != "qwen-local" and model not in ALIASES:
+        return None  # embedding 等其他模型不动
+    level, src = _detect_level(data)
+    # messages 路径: 转换层剥掉了 Anthropic 字段, 去原始请求体里找
+    psr = data.get("proxy_server_request")
+    body = (psr.get("body") if isinstance(psr, dict) else None) or {}
+    if level is None and isinstance(body, dict) and body:
+        level, src0 = _detect_level(body)
+        if level is not None:
+            src = "orig:" + (src0 or "")
+    # 模型别名
+    if level is None and model in ALIASES:
+        level, src = ALIASES[model], "model=" + model
+    # 调试转储: 仍无信号时, 把原始 body 结构记下来
+    if level is None:
+        try:
+            b = body if isinstance(body, dict) else {}
+            with open("/tmp/tm_reqdump.jsonl", "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "ts": datetime.now().strftime("%H:%M:%S"),
+                    "model": model,
+                    "data_keys": sorted(list(data.keys()))[:40],
+                    "body_keys": sorted(list(b.keys()))[:40],
+                    "body_thinking": repr(b.get("thinking"))[:200],
+                    "body_output_config": repr(b.get("output_config"))[:200],
+                    "body_extra": {k: repr(v)[:100] for k, v in list(b.items())[:6]
+                                   if k not in ("messages", "system", "tools", "metadata")},
+                }, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+    if level is None:
+        level, src = "medium", "default"
+    # 注入 vLLM
+    eb = data.get("extra_body")
+    if not isinstance(eb, dict):
+        eb = {}
+        data["extra_body"] = eb
+    if level == "off":
+        eb["chat_template_kwargs"] = {"enable_thinking": False}
+    else:
+        eb["chat_template_kwargs"] = {"reasoning_effort": level}
+    # responses 直通场景: 同步归一化 reasoning.effort
+    r = data.get("reasoning")
+    if isinstance(r, dict) and "effort" in r:
+        r["effort"] = "none" if level == "off" else level
+    # 清理已映射的顶层参数
+    data.pop("reasoning_effort", None)
+    data.pop("thinking", None)
+    md = data.get("metadata")
+    if not isinstance(md, dict):
+        md = {}
+        data["metadata"] = md
+    md["thinking_level"] = level
+    md["thinking_level_src"] = src
+    lm = data.get("litellm_metadata")
+    if not isinstance(lm, dict):
+        lm = {}
+        data["litellm_metadata"] = lm
+    lm["thinking_level"] = level
+    lm["thinking_level_src"] = src
+    fp = _fp(model, data.get("messages") or data.get("input"))
+    if fp:
+        if len(_pending) > 4096:
+            now0 = time.time()
+            for k in [k for k, v in _pending.items() if now0 - v[2] > 1800]:
+                _pending.pop(k, None)
+        _pending[fp] = (level, src, time.time())
+    print("\U0001F39A " + datetime.now().strftime('%m-%d %H:%M:%S') +
+          f" model={model} thinking->{level} (来自 {src})", flush=True)
+    return level, src
+
+import hashlib
+
+_seen = {}        # dedupe key -> ts (sync/async 双钩子防重复落盘)
+_pending = {}     # 内容指纹 -> (level, src, ts): messages/responses 路径 metadata 不透传时的次级关联
+_stream_acc = {}  # call_id -> {"chars": int, "cjk": int} 流式 chunk 兜底累计
+
+
+def _get(obj, *names, default=None):
+    """从对象或 dict 依次尝试取字段(含 pydantic model_extra)。"""
+    for n in names:
+        try:
+            v = getattr(obj, n, None)
+            if v is None and isinstance(obj, dict):
+                v = obj.get(n)
+            if v is None:
+                extra = getattr(obj, "model_extra", None)
+                if isinstance(extra, dict):
+                    v = extra.get(n)
+            if v is not None:
+                return v
+        except Exception:
+            continue
+    return default
+
+
+def _cjk_count(s):
+    return sum(1 for c in s if "一" <= c <= "鿿")
+
+
+def _est_tokens(chars, cjk):
+    """混合语言token估算: CJK约1.6字符/token, 其余约3.8字符/token。"""
+    if not chars:
+        return 0
+    return int(round(min(cjk, chars) / 1.6 + max(0, chars - cjk) / 3.2))
+
+
+def _extract_reasoning(response_obj):
+    """返回 (思考文本 或 None, 可见文本)。兼容 chat 与 Responses(output items)。"""
+    reasoning, visible = None, ""
+    try:
+        choices = _get(response_obj, "choices") or []
+        if choices:
+            msg = _get(choices[0], "message") or {}
+            for n in ("reasoning_content", "reasoning"):
+                v = _get(msg, n)
+                if v:
+                    reasoning = v if isinstance(v, str) else str(v)
+                    break
+            c = _get(msg, "content")
+            if isinstance(c, str):
+                visible = c
+            elif isinstance(c, list):
+                for b in c:
+                    if not isinstance(b, dict):
+                        b = getattr(b, "model_dump", lambda: {})() if hasattr(b, "model_dump") else {}
+                    bt = b.get("type")
+                    if bt == "thinking":
+                        reasoning = (reasoning or "") + str(b.get("thinking") or "")
+                    elif bt in ("text", "output_text"):
+                        visible += str(b.get("text") or "")
+                    elif bt == "tool_use":
+                        visible += json.dumps(b.get("input") or {}, ensure_ascii=False)
+        out = _get(response_obj, "output")
+        if isinstance(out, list):
+            for it in out:
+                t = _get(it, "type")
+                if t == "reasoning":
+                    parts = []
+                    summ = _get(it, "summary")
+                    if isinstance(summ, list):
+                        for sp in summ:
+                            v = _get(sp, "text")
+                            if isinstance(v, str):
+                                parts.append(v)
+                    for k in ("content", "text"):
+                        v = _get(it, k)
+                        if isinstance(v, str) and v:
+                            parts.append(v)
+                    if parts:
+                        reasoning = (reasoning or "") + "".join(parts)
+                elif t in ("message", "output_message"):
+                    cont = _get(it, "content")
+                    if isinstance(cont, list):
+                        for cp in cont:
+                            v = _get(cp, "text")
+                            if isinstance(v, str):
+                                visible += v
+                    elif isinstance(cont, str):
+                        visible += cont
+                elif t in ("function_call", "local_shell_call"):
+                    a = _get(it, "arguments")
+                    if isinstance(a, str):
+                        visible += a
+    except Exception:
+        pass
+    return reasoning, visible
+
+
+def _sniff_chunk(chunk):
+    """从任意形态流式 chunk 提取 (思考增量, 可见增量)。"""
+    rsn, vis = "", ""
+    try:
+        if isinstance(chunk, (bytes, bytearray)):
+            chunk = chunk.decode("utf-8", "ignore")
+        if isinstance(chunk, str):  # 原始 SSE 文本
+            for line in chunk.splitlines():
+                line = line.strip()
+                if line.startswith("data:"):
+                    payload = line[5:].strip()
+                    if payload and payload != "[DONE]":
+                        try:
+                            r2, v2 = _sniff_chunk(json.loads(payload))
+                            rsn += r2
+                            vis += v2
+                        except Exception:
+                            pass
+            return rsn, vis
+        if isinstance(chunk, dict) or hasattr(chunk, "choices"):
+            choices = _get(chunk, "choices") or []
+            if choices:
+                d = _get(choices[0], "delta") or {}
+                for n in ("reasoning_content", "reasoning"):
+                    v = _get(d, n)
+                    if v:
+                        rsn += v if isinstance(v, str) else str(v)
+                        break
+                v = _get(d, "content")
+                if isinstance(v, str):
+                    vis += v
+                return rsn, vis
+        t = str(_get(chunk, "type") or "")
+        if t == "content_block_delta":  # Anthropic messages 流式
+            d = _get(chunk, "delta") or {}
+            dt = str(_get(d, "type") or "")
+            if dt == "thinking_delta":
+                v = _get(d, "thinking")
+                if isinstance(v, str):
+                    rsn += v
+            elif dt in ("text_delta", "input_json_delta"):
+                v = _get(d, "text") or _get(d, "partial_json")
+                if isinstance(v, str):
+                    vis += v
+            return rsn, vis
+        if t:  # Responses API 事件
+            txt = _get(chunk, "delta")
+            if not isinstance(txt, str):
+                txt = _get(chunk, "text")
+            if isinstance(txt, str):
+                if "reasoning" in t:
+                    rsn += txt
+                elif "output_text" in t or t.endswith("text.delta"):
+                    vis += txt
+    except Exception:
+        pass
+    return rsn, vis
+
+
+def _extract_delta_reasoning(chunk):
+    try:
+        choices = _get(chunk, "choices") or []
+        if not choices:
+            return ""
+        d = _get(choices[0], "delta") or {}
+        for n in ("reasoning_content", "reasoning"):
+            v = _get(d, n)
+            if v:
+                return v if isinstance(v, str) else str(v)
+    except Exception:
+        pass
+    return ""
+
+
+def _level(kwargs):
+    """返回 (level, src)。优先 metadata, 次选内容指纹关联。"""
+    lp = kwargs.get("litellm_params") or {}
+    md2 = lp.get("metadata") or {}
+    slo = kwargs.get("standard_logging_object")
+    md1 = (slo.get("metadata") or {}) if isinstance(slo, dict) else {}
+    md3 = kwargs.get("litellm_metadata") or {}
+    for md in (md2, md1, md3 if isinstance(md3, dict) else {}):
+        if isinstance(md, dict) and md.get("thinking_level"):
+            return str(md["thinking_level"]), str(md.get("thinking_level_src") or "")
+    # 指纹兜底(messages/responses 路径 metadata 被转换层丢弃时)
+    try:
+        fp = _fp(kwargs.get("model"), kwargs.get("messages"))
+        if fp and fp in _pending:
+            level, src, ts0 = _pending.pop(fp)
+            if time.time() - ts0 < 1800:
+                return level, src + "(fp)"
+    except Exception:
+        pass
+    # 兜底: 直接从请求参数看
+    for srcd in (lp.get("extra_body"), kwargs.get("extra_body")):
+        if isinstance(srcd, dict):
+            ctk = srcd.get("chat_template_kwargs")
+            if isinstance(ctk, dict):
+                if ctk.get("enable_thinking") is False:
+                    return "off", "extra_body"
+                if ctk.get("reasoning_effort"):
+                    return str(ctk["reasoning_effort"]), "extra_body"
+    return ("medium", "tpl-default")
+
+
+def _who(kwargs):
+    """尽力识别调用方: UA标签 / IP / key别名 / end_user。"""
+    if os.environ.get("THINKING_METER_DEBUG"):
+        try:
+            with open("/tmp/tm_debug.jsonl", "a", encoding="utf-8") as f:
+                f.write(json.dumps({"where": "emit", "resp_type": type(response_obj).__name__,
+                                    "repr": repr(response_obj)[:800]}, ensure_ascii=False, default=str) + "\n")
+        except Exception:
+            pass
+    slo = kwargs.get("standard_logging_object") or {}
+    if not isinstance(slo, dict):
+        slo = {}
+    md = slo.get("metadata") or {}
+    lp = kwargs.get("litellm_params") or {}
+    md2 = lp.get("metadata") or {}
+    psr = kwargs.get("proxy_server_request") or lp.get("proxy_server_request") or {}
+    if not isinstance(psr, dict):
+        psr = {}
+    headers = psr.get("headers") or {}
+    if not isinstance(headers, dict):
+        headers = {}
+
+    ua = headers.get("user-agent") or headers.get("User-Agent") or ""
+    u = str(ua).lower()
+    if "claude-cli" in u or "claude-code" in u or "anthropic" in u:
+        tag = "claude-code"
+    elif "open-webui" in u:
+        tag = "open-webui"
+    elif "curl" in u:
+        tag = "curl"
+    elif "openai/python" in u or "python" in u:
+        tag = "py"
+    elif u:
+        tag = str(ua).split("/")[0].split(" ")[0][:16] or "?"
+    else:
+        tag = "?"
+
+    ip = (md.get("requester_ip_address")
+          or psr.get("ip_address")
+          or headers.get("x-forwarded-for") or headers.get("x-real-ip") or "")
+    alias = md.get("user_api_key_alias") or md2.get("user_api_key_alias") or ""
+    end_user = md.get("user_api_key_end_user_id") or md2.get("end_user") or ""
+    return tag, str(ip).split(",")[0].strip(), str(alias or ""), str(end_user or "")
+
+
+def _usage_of(response_obj, slo):
+    u = _get(response_obj, "usage") or {}
+    pt = _get(u, "prompt_tokens", default=0) or 0
+    ct = _get(u, "completion_tokens", default=0) or 0
+    cached = None
+    ptd = _get(u, "prompt_tokens_details")
+    if ptd is not None:
+        cached = _get(ptd, "cached_tokens")
+    if cached is None and isinstance(slo, dict):
+        ptd2 = slo.get("prompt_tokens_details")
+        if isinstance(ptd2, dict):
+            cached = ptd2.get("cached_tokens")
+    return pt, ct, cached
+
+
+def _emit(kind, kwargs, response_obj, start_time, end_time, error=None):
+    call_id = str(kwargs.get("litellm_call_id") or kwargs.get("request_id") or "")
+    dkey = f"{call_id}#{kind}"
+    now = time.time()
+    if call_id:
+        if dkey in _seen:
+            return  # sync/async 双钩子去重
+        _seen[dkey] = now
+        if len(_seen) > 8192:
+            for k in [k for k, t in _seen.items() if now - t > 3600]:
+                _seen.pop(k, None)
+
+    slo = kwargs.get("standard_logging_object") or {}
+    if not isinstance(slo, dict):
+        slo = {}
+    lp = kwargs.get("litellm_params") or {}
+    tag, ip, alias, end_user = _who(kwargs)
+    pt, ct, cached = _usage_of(response_obj, slo)
+    lv, lv_src = _level(kwargs)
+
+    reasoning, visible = (None, "")
+    if response_obj is not None:
+        reasoning, visible = _extract_reasoning(response_obj)
+    acc = None
+    try:
+        fp2 = _fp(kwargs.get("model"), kwargs.get("messages"))
+    except Exception:
+        fp2 = None
+    if call_id:
+        acc = _stream_acc.pop(call_id, None)
+    if fp2:
+        acc2 = _stream_acc.pop("fp:" + fp2, None)  # 同请求的指纹孪生条目一并弹出防串扰
+        if acc is None:
+            acc = acc2
+    r_src = "none"
+    if reasoning:
+        r_chars, r_cjk = len(reasoning), _cjk_count(reasoning)
+        r_est = _est_tokens(r_chars, r_cjk)
+        r_src = "text"
+    elif acc and acc.get("chars"):
+        r_chars, r_cjk = acc["chars"], acc["cjk"]
+        r_est = _est_tokens(r_chars, r_cjk)
+        r_src = "stream"
+    elif lv == "off":
+        r_chars, r_est, r_src = 0, 0, "off"
+    else:
+        r_chars = 0
+        if visible:
+            vis_est = _est_tokens(len(visible), _cjk_count(visible))
+        elif acc and acc.get("vchars"):
+            vis_est = _est_tokens(acc["vchars"], acc["vcjk"])
+        else:
+            vis_est = 0
+        if vis_est:
+            r_est = max(0, ct - vis_est) if ct > vis_est + 8 else 0
+            r_src = "derived" if r_est else "none"
+        else:
+            r_est, r_src = None, "unavailable"
+
+    try:
+        latency_ms = int((end_time - start_time).total_seconds() * 1000)
+    except Exception:
+        latency_ms = -1
+
+    rec = {
+        "ts": datetime.now().astimezone().isoformat(timespec="milliseconds"),
+        "kind": kind,
+        "src": tag,
+        "ip": ip,
+        "key_alias": alias,
+        "end_user": end_user,
+        "model": str(kwargs.get("model") or slo.get("model") or ""),
+        "provider_model": str(lp.get("model") or ""),
+        "stream": bool(kwargs.get("stream")),
+        "level": lv,
+        "level_src": lv_src,
+        "prompt_tokens": pt,
+        "cached_tokens": cached,
+        "completion_tokens": ct,
+        "reasoning_chars": r_chars,
+        "reasoning_tokens_est": r_est,
+        "reasoning_src": r_src,
+        "latency_ms": latency_ms,
+        "call_id": call_id[:24],
+    }
+    if error is not None:
+        rec["error"] = str(error)[:300]
+
+    try:
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print(f"[thinking_meter] JSONL写入失败: {e}", file=sys.stderr, flush=True)
+
+    try:
+        cache_s = f" cache={cached * 100.0 / max(pt, 1):.0f}%" if cached else ""
+        if r_src in ("text", "stream"):
+            think_s = f" think≈{r_est}tok/{r_chars}c" + ("*" if r_src == "stream" else "")
+        elif r_src == "derived":
+            think_s = f" think≈{r_est}tok~"
+        elif r_src == "unavailable":
+            think_s = " think=n/a"
+        else:
+            think_s = " think=0"
+        mark = "⚡" if kind == "ok" else "❌"
+        who = tag + (f"@{ip}" if ip else "")
+        line = (f"{mark} {datetime.now().strftime('%m-%d %H:%M:%S')} {who:30s} "
+                f"{rec['model']} lvl={rec['level']}{('<-' + lv_src) if lv_src not in ('', 'default') else ''}{' strm' if rec['stream'] else ''} | "
+                f"in={pt}{cache_s} out={ct}{think_s} | {latency_ms / 1000:.1f}s")
+        if error is not None:
+            line += f" | ERR {str(error)[:140]}"
+        print(line, flush=True)
+    except Exception:
+        pass
+
+
+class ThinkingMeter(CustomLogger):
+
+    async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):
+        """请求发出前: 识别各客户端的档位信号并统一注入。"""
+        try:
+            _apply_level(data)
+        except Exception as e:
+            print(f"[thinking_meter] pre_call_hook: {e}", file=sys.stderr, flush=True)
+        return data
+
+    async def async_post_call_streaming_iterator_hook(self, user_api_key_dict=None,
+                                                       response=None, request_data=None, **_kw):
+        """包装流式迭代器: 逐块嗅探累计, 原样透传(litellm 1.97 签名)。"""
+        if response is None:
+            return
+        keys = []
+        try:
+            rd = request_data if isinstance(request_data, dict) else {}
+            cid = str(rd.get("litellm_call_id") or "")
+            if cid:
+                keys.append(cid)
+            fp = _fp(rd.get("model"), rd.get("messages") or rd.get("input"))
+            if fp:
+                keys.append("fp:" + fp)
+        except Exception:
+            pass
+        dbg = os.environ.get("THINKING_METER_DEBUG")
+        first = True
+        async for chunk in response:
+            try:
+                if keys:
+                    rsn, vis = _sniff_chunk(chunk)
+                    if rsn or vis:
+                        for k in keys:
+                            a = _stream_acc.get(k)
+                            if a is None:
+                                if len(_stream_acc) > 4096:
+                                    _stream_acc.clear()
+                                a = _stream_acc.setdefault(k, {"chars": 0, "cjk": 0, "vchars": 0, "vcjk": 0})
+                            a["chars"] += len(rsn)
+                            a["cjk"] += _cjk_count(rsn)
+                            a["vchars"] += len(vis)
+                            a["vcjk"] += _cjk_count(vis)
+                    if first and dbg:
+                        first = False
+                        with open("/tmp/tm_debug.jsonl", "a", encoding="utf-8") as f:
+                            f.write(json.dumps({"where": "chunk", "chunk_type": type(chunk).__name__,
+                                                "keys": keys, "repr": repr(chunk)[:400]},
+                                               ensure_ascii=False, default=str) + "\n")
+            except Exception:
+                pass
+            yield chunk
+
+    def log_success_event(self, kwargs, response_obj, start_time, end_time):
+        try:
+            _emit("ok", kwargs, response_obj, start_time, end_time)
+        except Exception as e:
+            print(f"[thinking_meter] {e}", file=sys.stderr, flush=True)
+
+    async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
+        try:
+            _emit("ok", kwargs, response_obj, start_time, end_time)
+        except Exception as e:
+            print(f"[thinking_meter] {e}", file=sys.stderr, flush=True)
+
+    def log_failure_event(self, kwargs, response_obj, start_time, end_time):
+        try:
+            _emit("err", kwargs, response_obj, start_time, end_time,
+                  error=kwargs.get("exception"))
+        except Exception:
+            pass
+
+    async def async_log_failure_event(self, kwargs, response_obj, start_time, end_time):
+        try:
+            _emit("err", kwargs, response_obj, start_time, end_time,
+                  error=kwargs.get("exception"))
+        except Exception:
+            pass
+
+    async def async_log_stream_event(self, kwargs, chunk, start_time, end_time):
+        """流式 chunk 级兜底累计 reasoning(防 litellm 聚合丢字段)。"""
+        try:
+            txt = _extract_delta_reasoning(chunk)
+            if txt:
+                cid = str(kwargs.get("litellm_call_id") or "")
+                if cid:
+                    if len(_stream_acc) > 2048:
+                        _stream_acc.clear()
+                    a = _stream_acc.setdefault(cid, {"chars": 0, "cjk": 0})
+                    a["chars"] += len(txt)
+                    a["cjk"] += _cjk_count(txt)
+        except Exception:
+            pass
+
+
+thinking_meter = ThinkingMeter()

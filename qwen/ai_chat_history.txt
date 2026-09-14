@@ -1,0 +1,310 @@
+
+    结案报告：补丁之前确实压根没生效，现已修好并验证 ✅
+
+  之前没生效的完整证据链（三层全断）
+
+  1. 容器启动参数里根本没有 --chat-template（docker inspect 确认）；
+  2. 模型目录里的 chat_template.jinja 还是 8月20日的原装文件（默认 xhigh）——你改的是 tokenizer_config.json，但 vLLM/transformers 优先读 jinja 文件；
+  3. 你把 tokenizer_config.json 的 chat_template 字段改成了字符串 'chat_template_oneline.txt'（正好25字符）——transformers
+  不会解析文件名引用，这个字段是无效垃圾，任何引擎都不会因此去读那个文件；
+  4. 更糟的是，两份 oneline 文件本身都是坏的：各含 1 个终端转义符污染（\x1b粘贴过终端时混入），把 endif 打成了 end\x1b——即使被引用也会 jinja 解析失败。
+
+  我做的修复（全部有备份，可回滚）
+
+  1. 从 ModelScope 镜像下载了干净的官方 chat_template.jinja（28226 字节 / 459 行 / qwen3.8-froggeric-v22.5 / ESC 污染 0）；
+  2. 备份原模板 → chat_template.jinja.stock.bak，替换之；
+  3. 从 tokenizer_config.json 移除假字段（备份 .bak2）；
+  4. 容器内渲染测试通过 → docker restart（75 秒就绪）；
+  5. 损坏的 oneline 文件隔离到 /data/ai/patch/broken/。
+
+  API 实测验证（补丁生效的铁证）
+
+  ┌─────────────────────────┬────────────────────────────────────┬───────────────────────────────────────────────────────────┐
+  │          测试           │               补丁前               │                          补丁后                           │
+  ├─────────────────────────┼────────────────────────────────────┼───────────────────────────────────────────────────────────┤
+  │ 默认档位                │ xhigh（思考 208 字符）             │ medium（思考 93 字符），与显式 medium 逐字节一致 ✓        │
+  ├─────────────────────────┼────────────────────────────────────┼───────────────────────────────────────────────────────────┤
+  │ reasoning_effort:"high" │ HTTP 400                           │ ✅ 接受，等效 xhigh（别名）                               │
+  ├─────────────────────────┼────────────────────────────────────┼───────────────────────────────────────────────────────────┤
+  │ 难题烧穿测试            │ 4000 token 全烧在思考、正文 0 字符 │ 思考 6833 + 正文正常产出（截断只是我 max_tokens 给小了）  │
+  ├─────────────────────────┼────────────────────────────────────┼───────────────────────────────────────────────────────────┤
+  │ 工具调用                │ —                                  │ ✅ fin=tool_calls，qwen3_coder parser 与补丁 xml 格式兼容 │
+  └─────────────────────────┴────────────────────────────────────┴───────────────────────────────────────────────────────────┘
+
+  ⚠️  实测发现的两个坑（关思考的正确姿势）
+
+  - 只有 chat_template_kwargs: {"enable_thinking": false} 有效（think=0，正文正常）；
+  - 顶层 enable_thinking: false 无效（这版 vLLM 不透传给模板）；
+  - reasoning_effort: "none" 有坑别用：模型确实不思考了，但正文会被 reasoning parser 整个错分进 reasoning 字段（content=0）——README 说的 none 模式在 0.27.1 + qwen3 parser
+  组合下行为不对。
+
+  所以 litellm 配置定稿：平时什么都不传（默认 medium），要极速就 extra_body: {chat_template_kwargs: {enable_thinking: false}}，难题手动 reasoning_effort: "xhigh"。
+
+  顺手把欠账结了：KV 容量账（日志实测 428,699 tokens）
+
+  ┌─────────────────────────────┬───────────┬─────────────────────────────────────────────────────────┐
+  │            场景             │   占用    │                          结论                           │
+  ├─────────────────────────────┼───────────┼─────────────────────────────────────────────────────────┤
+  │ 2 人 × 100k（你的真实用量） │ 47%       │ ✅ 从容，还剩 ~23 万 token 给 prefix cache 留存         │
+  ├─────────────────────────────┼───────────┼─────────────────────────────────────────────────────────┤
+  │ 2 人 × 200k                 │ 93%       │ ⚠️  挤得进但缓存零余量，会互相驱逐；长会话建议各自 ≤150k │
+  ├─────────────────────────────┼───────────┼─────────────────────────────────────────────────────────┤
+  │ 6 并发                      │ 每人 ≤70k │ ✅ 可行                                                 │
+  └─────────────────────────────┴───────────┴─────────────────────────────────────────────────────────┘
+
+  遗留小事
+
+  - 模型目录还有个 vim 交换文件 .tokenizer_config.json.swp（9月12日 22:55 那次手改留下的），可删；
+  - check_applied.py 会警告 "SOURCE MISMATCH"（tokenizer_config 里没有内嵌模板了）——这是故意的，vLLM/transformers≥4.51 只认 jinja 文件，单一事实来源更干净；
+  - 回滚方法（如需）：cp chat_template.jinja.stock.bak chat_template.jinja && docker restart qwen-vllm。
+
+  至此整条链路闭环了：服务端性能（MTP+fp8+prefix cache）→ 思考档位（默认 medium，可控四档）→ 工具调用兼容。接下来就是在 Claude Code 里真实用几天，重点体感验证多轮
+  TTFT（prefix cache）和工具调用稳定性。
+
+
+litellm 配置文件： /data/ai/litellm/config.yaml
+litellm启动脚本： /data/ai/litellm.sh
+
+需求：
+1. 给真实流量装个"思考电表",  上面都是单发测量；要看 Claude Code 真实会话的思考用量，唯一位置是 litellm（它能收到每个响应的 reasoning 字段）。10 行自定义 callback 落盘  JSONL（时间戳/prompt_tokens/completion_tokens/reasoning字符数），跑一周就能出"每人每天烧了多少思考 token、各档位占比"的报表。需要的话把 litellm
+  配置文件路径给我，我直接帮你装上。
+2. 实现一个插件，把上述信息同步显示到屏幕上，现在默认会大约请求的信息，但是太粗略了，没有时间戳，没有上述信息，没有指定的思考级别。默认只有这些：INFO:     172.18.0.2:34264 - "GET /metrics/ HTTP/1.1" 200 OK。把没有的都加上。
+
+● 直接回答：还是不能——而且这次拿到了源码级证据，两条路都堵着
+
+  ┌──────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │         端点         │                                                                      结论                                                                       │
+  ├──────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ /v1/chat/completions │ 协议里根本没有这个字段。grep 遍 protocol.py，0.27.1 的 chat 响应模型就没定义 completion_tokens_details——和补丁无关，模板只管渲染 prompt，usage  │
+  │                      │ 是 vLLM 服务层的事                                                                                                                              │
+  ├──────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ /v1/responses        │ 字段存在但恒为 0。刚实测：思考明明发生了（output_tokens=323），output_tokens_details.reasoning_tokens 却是 0。源码直接自曝：context.py:196 写着 │
+  │                      │  # todo num_reasoning_tokens is not implemented yet                                                                                             │
+  ├──────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Prometheus metrics   │ 也没有 reasoning 类计数器（只有请求成败/排队指标）                                                                                              │
+  └──────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  所以在这个 vLLM 版本上，reasoning_tokens 是官方 TODO，等上游实现后升级镜像即可。但"真实思考级别和用量"完全可以用下面三招拿到：
+
+  ① 级别：它是输入参数，服务端不回显——但有个"prompt_tokens 指纹"
+
+  刚才的测试意外发现一个取证利器：medium 档零注入，low/xhigh 会往 prompt 里注入 ~30 token 的档位指令（实测同一问题 input_tokens：默认 medium=30，low=60）。所以：
+
+  - 看 litellm 日志里同样内容的请求 prompt_tokens 比基准多 ~30 → 说明客户端传了 low/xhigh；
+  - 级别本身去客户端配置里查：litellm 的 extra_body.chat_template_kwargs.reasoning_effort，或 responses 客户端的 reasoning.effort 参数（顺带确认：responses API 的
+  reasoning:{"effort":"low"} 会被透传进模板——input 从 30 变 60 就是证据。你之前崩溃日志里就有 /v1/responses 流量，那条链路的客户端是用这个参数控档位的）。
+
+  ② 用量：message.reasoning 字段就是答案，精确计量脚本在此
+
+  chat 响应里思考全文都在 reasoning 字段（流式则在 delta 里）。精确 token 数在容器里 tokenize 即可：
+
+  ssh root@121.40.190.90 'docker exec -i qwen-vllm python3 - <<EOF
+  import json, urllib.request
+  from transformers import AutoTokenizer
+  tok = AutoTokenizer.from_pretrained("/models/Qwen3.8-27B-AWQ-INT4", trust_remote_code=True)
+  body = {"model":"qwen-local","messages":[{"role":"user","content":"你的问题"}],"max_tokens":2000}
+  req = urllib.request.Request("http://localhost:8000/v1/chat/completions",
+      data=json.dumps(body).encode(), headers={"Content-Type":"application/json"})
+  d = json.load(urllib.request.urlopen(req, timeout=300))
+  r = d["choices"][0]["message"].get("reasoning") or ""
+  print("思考tokens(精确):", len(tok.encode(r)))
+  EOF'
+  │ medium（现默认）      │ ~93 字符（≈50 tok）   │ 5889 字符                        │ 0           │
+  ├───────────────────────┼───────────────────────┼──────────────────────────────────┼─────────────┤
+  │ xhigh/high            │ ~208 字符（≈100 tok） │ 8744+ 字符（烧穿 4000 tok 预算） │ +~30 tok    │
+  └───────────────────────┴───────────────────────┴──────────────────────────────────┴─────────────┘
+
+  拿到 reasoning 长度对着这张表一比，就知道请求实际跑在哪一档。
+
+  可选：给真实流量装个"思考电表"
+
+  上面都是单发测量；要看 Claude Code 真实会话的思考用量，唯一位置是 litellm（它能收到每个响应的 reasoning 字段）。10 行自定义 callback 落盘
+  JSONL（时间戳/prompt_tokens/completion_tokens/reasoning字符数），跑一周就能出"每人每天烧了多少思考 token、各档位占比"的报表。需要的话把 litellm
+  配置文件路径给我，我直接帮你装上。
+
+
+ssh root@121.40.190.90 'docker exec -i qwen-vllm python3 - <<EOF
+  import json, urllib.request
+  from transformers import AutoTokenizer
+  tok = AutoTokenizer.from_pretrained("/models/Qwen3.8-27B-AWQ-INT4", trust_remote_code=True)
+  body = {"model":"qwen-local","messages":[{"role":"user","content":"你的问题"}],"max_tokens":2000}
+  req = urllib.request.Request("http://localhost:8000/v1/chat/completions",
+      data=json.dumps(body).encode(), headers={"Content-Type":"application/json"})
+  d = json.load(urllib.request.urlopen(req, timeout=300))
+  r = d["choices"][0]["message"].get("reasoning") or ""
+  print("思考tokens(精确):", len(tok.encode(r)))
+  EOF'
+
+
+
+
+● 先回答:是的,当前配置在两个地方硬编码了 medium(model 级 extra_body + litellm_settings.extra_body),所有客户端一律 medium,无法按请求覆盖。
+
+  要实现你要的效果,我设计成:litellm 里加一个 pre-call 钩子,统一识别三种客户端的原生信号并映射(高亮:模板本身已认 high=xhigh 别名,但要处理 Codex 的 minimal、Claude Code 的
+  thinking.budget_tokens 等):
+
+  ┌─────────────┬───────────────────────────────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────┐
+  │   客户端    │                                   原生信号                                    │                        映射规则                         │
+  ├─────────────┼───────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+  │ Codex       │ reasoning.effort: minimal/low/medium/high/xhigh                               │ minimal→low, high→xhigh, 其余直传                       │
+  ├─────────────┼───────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+  │ Open WebUI  │ 顶层 reasoning_effort 或选模型别名                                            │ 同上                                                    │
+  ├─────────────┼───────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+  │ Codex       │ reasoning.effort: minimal/low/medium/high/xhigh                               │ minimal→low, high→xhigh, 其余直传                       │
+  ├─────────────┼───────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+  │ Open WebUI  │ 顶层 reasoning_effort 或选模型别名                                            │ 同上                                                    │
+  ├─────────────┼───────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+  │ Claude Code │ thinking.budget_tokens(think/ultrathink 关键词、MAX_THINKING_TOKENS 都会产生) │ ≤1024→low, ≤8192→medium, >8192→xhigh; type:disabled→off │
+  ├─────────────┼───────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+  │ 所有客户端  │ 模型别名 qwen-low / qwen-xhigh / qwen-nothink                                 │ 直接定档(给不支持发参数的场景兜底)                      │
+  ├─────────────┼───────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+  │ 都没指定    │ —                                                                             │ 默认 medium                                             │
+  └─────────────┴───────────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────┘
+
+  升级电表到 v1.2(加钩子)并改配置(去掉强制 extra_body、注册别名模型):
+
+● ✅ 全链路收官：档位现在可以从任何客户端指定了
+
+  最终验证结果（六路全通）
+
+  ┌───────────────────────────────────────────┬─────────────────────────────────────┬────────────────┬──────────────────────────────────────┐
+  │                   路径                    │             客户端信号              │    路由决策    │               电表标签               │
+  ├───────────────────────────────────────────┼─────────────────────────────────────┼────────────────┼──────────────────────────────────────┤
+  │ chat + 顶层 reasoning_effort=high         │ Open WebUI 风格                     │ high→xhigh ✓   │ lvl=xhigh<-reasoning_effort=high     │
+  ├───────────────────────────────────────────┼─────────────────────────────────────┼────────────────┼──────────────────────────────────────┤
+  │ messages + thinking.budget=31999/10000    │ Claude Code (ultrathink/think hard) │ →xhigh ✓       │ lvl=xhigh<-thinking.budget=…         │
+  ├───────────────────────────────────────────┼─────────────────────────────────────┼────────────────┼──────────────────────────────────────┤
+  │ responses + reasoning.effort=high         │ Codex                               │ high→xhigh ✓   │ lvl=xhigh<-reasoning.effort=high     │
+  ├───────────────────────────────────────────┼─────────────────────────────────────┼────────────────┼──────────────────────────────────────┤
+  │ 模型别名 qwen-nothink/qwen-xhigh/qwen-low │ 任意客户端                          │ ✓              │ lvl=off<-model=qwen-nothink，think=0 │
+  ├───────────────────────────────────────────┼─────────────────────────────────────┼────────────────┼──────────────────────────────────────┤
+  │ 什么都不传                                │ —                                   │ medium（默认） │ lvl=medium                           │
+  └───────────────────────────────────────────┴─────────────────────────────────────┴────────────────┴──────────────────────────────────────┘
+
+  回答你最初的问题：是的，之前 config 在 model 级和全局级双重硬编码了 medium——我已把这两处 extra_body 移除（备份 config.yaml.bak2），现在默认档位由 hook
+  统一解析（无信号=medium），客户端信号随时可覆盖。
+
+  各客户端怎么用
+
+  - Claude Code（三种方式，按方便程度）：
+    a. 提示词关键词：think→medium、think hard/ultrathink→xhigh（CC 会发 budget_tokens 4000/10000/31999，hook 按 ≤1024→low、≤8192→medium、>8192→xhigh 映射）；
+    b. /model qwen-xhigh 或 qwen-nothink（会话内切换）；
+    c. 启动时 ANTHROPIC_MODEL=qwen-xhigh / MAX_THINKING_TOKENS=512（→low）。
+  - Codex：model_reasoning_effort = "low" | "medium" | "high" | "xhigh"（high 自动映射 xhigh，minimal→low）。
+  - Open WebUI：模型下拉框直接选 qwen-local(medium) / qwen-low / qwen-xhigh / qwen-nothink，或在高级参数里填 reasoning_effort。
+
+  屏幕显示语义（tail -f /data/ai/litellm.log）
+
+  🎚 19:10:54 model=qwen-local thinking->xhigh (来自 thinking.budget=10000)   ← 档位路由决策
+  ⚡ 19:10:56 curl@127.0.0.1  qwen-local lvl=xhigh<-thinking.budget=10000 strm | in=72 out=194 think≈144tok~ | 2.5s
+
+  思考量标记：114tok/366c=拿到思考原文（精确，chat 路径）；*=流式chunk累计；~=token差值反推（Claude Code 流式路径，趋势可信、单条 ±30~50%）；n/a=拿不到（responses
+  非流式）；=0=off 档。JSONL 里 reasoning_src 字段标明了来源，报表时可区分权重。
+
+  交付清单
+
+  ┌───────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────┐
+  │                 文件                  │                                            状态                                             │
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ /data/ai/litellm/thinking_meter.py    │ v1.2.2：电表 + 档位路由 hook（含指纹关联，兜住 metadata 不透传的 anthropic/responses 路径） │
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ /data/ai/litellm/config.yaml          │ 去掉强制 extra_body；新增 4 个别名模型（备份 .bak2）                                        │
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ /data/ai/litellm/thinking_usage.jsonl │ 每请求一行，含 level/level_src/reasoning_src 新字段                                         │
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ /data/ai/litellm/thinking_report.py   │ 报表：默认汇总 / --level 档位分布 / --slow N 慢请求                                         │
+  └───────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  两个遗留提醒：① request_timeout: 180 + num_retries: 3 的重试风暴风险仍在（冷启动 200k TTFT≈150s 就贴线了），建议 900/1，你点头我就改；② Claude Code 关键词档位依赖 CC 真的发
+  thinking 参数——如果实测发现 ultrathink 没触发 🎚 行，就用 /model qwen-xhigh 别名方案（那条路是百分百可靠的）。
+
+✻ Churned for 18m 30s
+==========================
+● 修复完成 ✅ 复盘 + 现状
+
+  出了什么事（诚实版）
+
+  1. v1.3.0 我把流式接口搞挂了：litellm 1.97 调用流式钩子的真实签名是 (user_api_key_dict, response, request_data)，我按旧文档的签名写 → 所有流式请求 500。发现后 60 秒内回滚
+  v1.2.2 恢复服务（你的 Codex 期间可能遇到了两次 ~10 秒的中断，抱歉）；
+  2. 读源码拿到正确签名后重建 v1.3.1，这次部署流程加了双保险：隔离目录导入自检 + 流式门禁（非 200 自动回滚）；
+  3. 又抓到一个数据串扰 bug（相同 prompt 的指纹残留条目被下一个请求误领，导致 low 档显示了 high 档的思考量）→ v1.3.2 修复并回归通过。当前生产版本 v1.3.2，DEBUG
+  已关，服务器留有 thinking_meter.py.v122.bak 可随时回滚。
+
+  你报的问题（think=n/a）已解决
+
+  根因：Codex 走 /v1/responses 流式，litellm 的聚合响应里根本不带思考文本，v1.2.2 只能标 n/a。v1.3.2 用流式迭代器钩子逐块嗅探累计，现在各路径的测量质量为：
+
+  ┌──────────────────┬─────────────┬────────────────────┬───────────────────────────┐
+  │       路径       │   客户端    │     思考量显示     │           精度            │
+  ├──────────────────┼─────────────┼────────────────────┼───────────────────────────┤
+  │ chat/completions │ Open WebUI  │ think≈114tok/366c  │ 精确（拿到思考原文）      │
+  ├──────────────────┼─────────────┼────────────────────┼───────────────────────────┤
+  │ responses 流式   │ Codex       │ think≈157tok/502c* │ 精确（*=chunk级累计原文） │
+  ├──────────────────┼─────────────┼────────────────────┼───────────────────────────┤
+  │ responses 非流式 │ —           │ think≈210tok~      │ 反推，偏大，看趋势        │
+  ├──────────────────┼─────────────┼────────────────────┼───────────────────────────┤
+  │ messages 流式    │ Claude Code │ think≈270tok~      │ 反推，偏大，看趋势        │
+  └──────────────────┴─────────────┴────────────────────┴───────────────────────────┘
+
+  Claude Code 路径拿不到精确值的原因还是那个上游问题：litellm 的 Anthropic 转换层丢弃 vLLM 的 reasoning 字段（它只认
+  reasoning_content），思考文本在到达任何回调之前就被扔了，只能用 completion_tokens − 可见正文 反推。等 litellm 跟进 vLLM
+  的新字段名后，电表代码无需改动会自动升级为精确值（提取逻辑已兼容）。
+
+  档位（lvl=）和来源（<-reasoning.effort=high 等）在所有路径都是精确的；in=/cache=/out=/时延同样精确。
+
+  现在轮到你了
+
+  你的 Codex 刚才那一波（19:20 的 xhigh 会话）之后重启过 litellm，下一次 Codex 请求开始，屏幕上就会是：
+
+  ⚡ 09-13 19:5x:xx codex-tui@127.0.0.1  qwen-local lvl=xhigh<-reasoning.effort=high strm | in=115079 cache=98% out=3269 think≈1900tok/6100c* | 37.9s
+
+  跑一段时间后 python3 /data/ai/litellm/thinking_report.py --level 就能看到你们俩各档位的真实用量分布了。
+
+✻ Churned for 19m 29s
+
+❯ 你帮我安装的那个qwen3.8-27b的补丁，安装之后，默认的思考级别是啥？通过什么命令可以查到？
+
+  Thought for 37s (ctrl+o to expand)
+
+● Bash(ssh -o BatchMode=yes root@121.40.190.90 '
+      echo "=== ① 模板源码里的默认档位定义 ==="…)
+  ⎿  === ① 模板源码里的默认档位定义 ===
+     1:{%- set template_version = "qwen3.8-froggeric-v22.5" %}
+     17:{%- set _default_reasoning_effort = 'medium' %}
+     … +12 lines (ctrl+o to expand)
+
+  Thought for 14s (ctrl+o to expand)
+
+● 默认思考级别：medium，三处证据都验证了
+
+  直接答案
+
+  装上补丁（qwen3.8-froggeric-v22.5）后，模板默认档位从官方的 xhigh 改成了 medium——这正是这个补丁的核心卖点（官方 xhigh 经常把 token 预算烧光却不输出正文，我们之前实测过 4000
+  token 全烧在思考、正文 0 字符）。
+
+  另外注意你的链路上有两层默认，恰好都是 medium：
+  1. 模板层：chat_template.jinja 里 _default_reasoning_effort = 'medium'；
+  2. litellm 钩子层：客户端没发任何档位信号时，电表钩子会显式注入 reasoning_effort=medium（日志里 🎚 thinking->medium (来自 default) 就是它）。
+
+  想自己查，四个命令
+
+  # ① 最权威：直接看模板源码的默认值定义（第17行）
+  grep -n "_default_reasoning_effort" /data/models/Qwen3.8-27B-AWQ-INT4/chat_template.jinja
+
+  # ② 确认当前生效的模板是不是补丁版（会显示 qwen3.8-froggeric-v22.5）
+  python3 /data/ai/patch/clean/check_applied.py /data/models/Qwen3.8-27B-AWQ-INT4
+
+  # ③ 行为指纹：裸请求不带档位参数，看 prompt_tokens
+  #    medium=零注入；low/xhigh 会往 prompt 注入 ~30 token 的档位指令
+  curl -sS http://localhost:8000/v1/chat/completions -H 'Content-Type: application/json' \
+    -d '{"model":"qwen-local","messages":[{"role":"user","content":"1+1=?"}],"max_tokens":50}' \
+    | python3 -c "import json,sys; print(json.load(sys.stdin)['usage']['prompt_tokens'])"
+
+  # ④ 看 litellm 实时日志：无信号请求会显示 "thinking->medium (来自 default)"
+  tail -f /data/ai/litellm.log | grep 🎚
+
+  刚才我在你机器上跑的结果：①源码第 17 行 _default_reasoning_effort = 'medium' ✓；②README 明确写着 "Defaults to medium (zero injected tokens)" ✓；③裸请求
+  prompt_token[Is=14（零注入指纹，若是 low/xhigh 会变成 ~44）✓。
+
+
+
