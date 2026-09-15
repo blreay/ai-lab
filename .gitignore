@@ -1,0 +1,8 @@
+__pycache__/
+*.log
+*.swp
+*.swo
+*.bak
+*.bak[0-9]*
+*.bak2
+*.bk

@@ -4,7 +4,7 @@
 # 用法: bash start_metric.sh  （幂等：先清理同名旧容器，数据卷保留）
 set -euo pipefail
 
-MON_DIR=/data/ai/llm-monitor
+MON_DIR=/data/git/ai-lab/qwen/llm-monitor
 NET=llm-monitor_default
 
 # 1) 确保 compose 的默认网络存在
@@ -22,6 +22,7 @@ docker run -d \
   --name llm-prometheus \
   --restart unless-stopped \
   --network "$NET" \
+  --network-alias prometheus \
   --add-host host.docker.internal:host-gateway \
   -p 9090:9090 \
   -v "$MON_DIR/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
@@ -35,6 +36,7 @@ docker run -d \
   --name llm-grafana \
   --restart unless-stopped \
   --network "$NET" \
+  --network-alias grafana \
   -p 3001:3000 \
   -e GF_SECURITY_ADMIN_USER=admin \
   -e GF_SECURITY_ADMIN_PASSWORD=qwenmon2026 \
@@ -48,6 +50,7 @@ docker run -d \
   --name llm-dcgm-exporter \
   --restart unless-stopped \
   --network "$NET" \
+  --network-alias dcgm-exporter \
   --gpus all \
   --pid host \
   --cap-add SYS_ADMIN \
@@ -60,6 +63,7 @@ docker run -d \
   --name llm-nvidia-smi-exporter \
   --restart unless-stopped \
   --network "$NET" \
+  --network-alias nvidia-gpu-exporter \
   --gpus all \
   --pid host \
   -e NVIDIA_DRIVER_CAPABILITIES=utility \
