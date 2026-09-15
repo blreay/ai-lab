@@ -6,3 +6,4 @@ __pycache__/
 *.bak[0-9]*
 *.bak2
 *.bk
+.*.sw[a-p]
